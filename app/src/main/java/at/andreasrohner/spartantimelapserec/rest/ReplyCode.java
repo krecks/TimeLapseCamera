@@ -11,6 +11,11 @@ public enum ReplyCode {
 	FOUND(200, "Found"),
 
 	/**
+	 * Partial content (range request)
+	 */
+	PARTIAL_CONTENT(206, "Partial Content"),
+
+	/**
 	 * Forbidden
 	 */
 	FORBIDDEN(403, "Forbidden"),
@@ -18,7 +23,12 @@ public enum ReplyCode {
 	/**
 	 * File was not found
 	 */
-	NOT_FOUND(404, "Not found");
+	NOT_FOUND(404, "Not found"),
+
+	/**
+	 * Internal server error
+	 */
+	SERVER_ERROR(500, "Internal Server Error");
 
 	/**
 	 * HTTP Code

@@ -13,12 +13,13 @@ import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.Closeable;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.io.RandomAccessFile;
 import java.net.Socket;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Collections;
@@ -36,48 +37,21 @@ import static android.os.Environment.DIRECTORY_PICTURES;
 import static at.andreasrohner.spartantimelapserec.R.raw;
 
 /**
- * Handle one HTTP Connection
- * <p>
- * This is a very simple HTTP Server Implementation. As the Server does not support HTTPS, it's
- * also not secure.
- * It's an interface which should only be used in an internal network.
- * Also the Performance could be improved, with Threadpool, HTTP 1.1 Connection reuse and so on.
- * <p>
+ * Handle one HTTP Connection.
+ *
+ * Single-request-per-connection HTTP/1.0-style server. Always sends Connection: close.
  * Andreas Butti, 2024
  */
 public class HttpThread extends Thread implements HttpOutput, Closeable {
 
-	/**
-	 * Log Tag
-	 */
 	private static final String TAG = HttpThread.class.getSimpleName();
 
-	/**
-	 * Pattern for Header Date / Time
-	 */
 	private final SimpleDateFormat HTTP_DATE_FORMAT = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.ENGLISH);
 
-	/**
-	 * TCP Socket
-	 */
 	private final Socket socket;
-
-	/**
-	 * Output Stream to reply
-	 */
 	private final OutputStream out;
-
-	/**
-	 * HTTP REST API Service
-	 */
 	private final RestService restService;
 
-	/**
-	 * Constructor
-	 *
-	 * @param socket      TCP Socket
-	 * @param restService HTTP REST API Service
-	 */
 	public HttpThread(Socket socket, RestService restService) throws IOException {
 		this.socket = socket;
 		this.out = new BufferedOutputStream(socket.getOutputStream());
@@ -97,55 +71,52 @@ public class HttpThread extends Thread implements HttpOutput, Closeable {
 	}
 
 	/**
-	 * Parse / Process the incoming request
+	 * Parse incoming request line + headers, dispatch.
 	 */
 	private void processRequest() throws IOException {
-		InputStreamReader isr = new InputStreamReader(socket.getInputStream());
+		InputStreamReader isr = new InputStreamReader(socket.getInputStream(), StandardCharsets.ISO_8859_1);
 		BufferedReader reader = new BufferedReader(isr);
 
 		String request = reader.readLine();
-		if (request != null) {
-			int pos = request.indexOf(' ');
-			if (pos == -1) {
-				Log.e(TAG, "Invalid Request: «" + request + "»");
-			}
-			String method = request.substring(0, pos);
-			int pos2 = request.indexOf(' ', pos + 1);
-			if (pos2 == -1) {
-				Log.e(TAG, "Invalid Request: «" + request + "»");
-			}
-			String url = request.substring(pos + 1, pos2);
-			String protocol = request.substring(pos2);
-
-			Log.d(TAG, "Request: «" + method + "» «" + url + "» «" + protocol + "»");
-
-			String line = reader.readLine();
-			Map<String, String> header = new HashMap<>();
-			while (line != null && !line.isEmpty()) {
-				pos = line.indexOf(':');
-				if (pos == -1) {
-					continue;
-				}
-
-				String key = line.substring(0, pos);
-				String value = line.substring(pos + 1);
-				header.put(key, value);
-
-				line = reader.readLine();
-			}
-
-			processRequest(method, url, protocol, header);
+		if (request == null) {
+			return;
 		}
 
+		int pos = request.indexOf(' ');
+		if (pos == -1) {
+			Log.e(TAG, "Invalid Request: «" + request + "»");
+			sendText(ReplyCode.NOT_FOUND, "Invalid request");
+			return;
+		}
+		String method = request.substring(0, pos);
+		int pos2 = request.indexOf(' ', pos + 1);
+		if (pos2 == -1) {
+			Log.e(TAG, "Invalid Request: «" + request + "»");
+			sendText(ReplyCode.NOT_FOUND, "Invalid request");
+			return;
+		}
+		String url = request.substring(pos + 1, pos2);
+		String protocol = request.substring(pos2);
+
+		Log.d(TAG, "Request: «" + method + "» «" + url + "» «" + protocol + "»");
+
+		Map<String, String> header = new HashMap<>();
+		String line;
+		while ((line = reader.readLine()) != null && !line.isEmpty()) {
+			int hp = line.indexOf(':');
+			if (hp == -1) {
+				continue;
+			}
+			String key = line.substring(0, hp).trim();
+			String value = line.substring(hp + 1).trim();
+			header.put(key, value);
+		}
+
+		processRequest(method, url, protocol, header);
 	}
 
 	/**
-	 * Process a HTTP Request
-	 *
-	 * @param method   Method
-	 * @param url      URL
-	 * @param protocol Protocol
-	 * @param header   Header Fields
+	 * Dispatch based on method.
 	 */
 	private void processRequest(String method, String url, String protocol, Map<String, String> header) throws IOException {
 		if ("GET".equals(method)) {
@@ -154,18 +125,19 @@ public class HttpThread extends Thread implements HttpOutput, Closeable {
 			}
 		}
 
-		sendReplyHeader(ReplyCode.NOT_FOUND, "text/plain");
+		if ("DELETE".equals(method)) {
+			if (processDeleteRequest(url)) {
+				return;
+			}
+		}
 
-		sendLine("File not found");
-		sendLine("");
-		sendFooter();
+		StringBuilder body = new StringBuilder();
+		body.append("File not found\r\n\r\n");
+		body.append("-------------------------------\r\n");
+		body.append("TimeLapseCam\r\n");
+		sendText(ReplyCode.NOT_FOUND, body.toString());
 	}
 
-	/**
-	 * Query battery level
-	 *
-	 * @return Battery level in percent
-	 */
 	private float getBatteryLevel() {
 		Intent batteryStatus = restService.getApplicationContext().registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
 		int batteryLevel = -1;
@@ -177,37 +149,33 @@ public class HttpThread extends Thread implements HttpOutput, Closeable {
 		return batteryLevel / (float) batteryScale * 100;
 	}
 
-	/**
-	 * Process a GET Request
-	 *
-	 * @param url    URL
-	 * @param header Header fields
-	 * @return true if processed
-	 */
 	private boolean processGetRequest(String url, Map<String, String> header) throws IOException {
 		if ("/".equals(url)) {
-			replyFile(raw.index, "text/html");
+			replyResource(raw.index, "text/html");
 			return true;
 		}
 
 		if ("/rest".equals(url)) {
-			replyFile(R.raw.help, "text/plain");
+			replyResource(R.raw.help, "text/plain");
 			return true;
 		}
 
 		if ("/favicon.ico".equals(url)) {
-			replyFile(raw.favicon, "image/x-icon");
+			replyResource(raw.favicon, "image/x-icon");
 			return true;
 		}
 
 		if (url.startsWith("/1/device/battery")) {
-			sendReplyHeader(ReplyCode.FOUND, "text/plain");
-			sendLine(String.valueOf(getBatteryLevel()));
+			sendText(ReplyCode.FOUND, String.valueOf(getBatteryLevel()));
 			return true;
 		}
 
+		if ("/1/dashboard".equals(url)) {
+			return processDashboard();
+		}
+
 		if (url.startsWith("/1/current/")) {
-			if (processCurrentRequest(url.substring(11))) {
+			if (processCurrentRequest(url.substring(11), header)) {
 				return true;
 			}
 		}
@@ -219,7 +187,7 @@ public class HttpThread extends Thread implements HttpOutput, Closeable {
 		}
 
 		if (url.startsWith("/1/img/")) {
-			if (processImageRequest(url.substring(6))) {
+			if (processImageRequest(url.substring(6), header)) {
 				return true;
 			}
 		}
@@ -227,17 +195,40 @@ public class HttpThread extends Thread implements HttpOutput, Closeable {
 		return false;
 	}
 
-	/**
-	 * Process Current Request
-	 *
-	 * @param command Command
-	 * @return true on success, false if not a valid command
-	 */
-	private boolean processCurrentRequest(String command) throws IOException {
+	private boolean processDashboard() throws IOException {
+		StringBuilder b = new StringBuilder();
+		b.append("state=").append(ForegroundService.mIsRunning ? "running" : "stopped").append("\r\n");
+		b.append("battery=").append(getBatteryLevel()).append("\r\n");
+		b.append("imgcount=").append(ImageRecorder.getRecordedImagesCount()).append("\r\n");
+
+		File last = ImageRecorder.getCurrentRecordedImage();
+		if (last != null) {
+			File rootDir = new File(Environment.getExternalStoragePublicDirectory(DIRECTORY_PICTURES).getPath());
+			String relative = rootDir.toURI().relativize(last.toURI()).getPath();
+			b.append("lastimg_name=").append(last.getName()).append("\r\n");
+			b.append("lastimg_ts=").append(last.lastModified()).append("\r\n");
+			b.append("lastimg_path=").append(relative).append("\r\n");
+		} else {
+			b.append("lastimg_name=\r\n");
+			b.append("lastimg_ts=0\r\n");
+			b.append("lastimg_path=\r\n");
+		}
+
+		SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(restService.getApplicationContext());
+		int interval = prefs.getInt("pref_capture_rate", 0);
+		String mode = prefs.getString("pref_rec_mode", "");
+		b.append("interval_ms=").append(interval).append("\r\n");
+		b.append("mode=").append(mode).append("\r\n");
+
+		sendText(ReplyCode.FOUND, b.toString());
+		return true;
+	}
+
+	private boolean processCurrentRequest(String command, Map<String, String> header) throws IOException {
 		if ("img".equals(command)) {
 			File lastImg = ImageRecorder.getCurrentRecordedImage();
 			if (lastImg != null && lastImg.isFile()) {
-				sendFileFromFilesystem(lastImg);
+				sendFileFromFilesystem(lastImg, header);
 				return true;
 			}
 		}
@@ -257,120 +248,160 @@ public class HttpThread extends Thread implements HttpOutput, Closeable {
 		}
 
 		if (result != null) {
-			sendReplyHeader(ReplyCode.FOUND, "text/plain");
-			sendLine(result);
+			sendText(ReplyCode.FOUND, result);
 			return true;
 		}
 
 		return false;
 	}
 
-	/**
-	 * Reply a file from RAW resources
-	 *
-	 * @param fileId      File ID
-	 * @param contentType Content Type
-	 * @throws IOException
-	 */
-	private void replyFile(int fileId, String contentType) throws IOException {
-		sendReplyHeader(ReplyCode.FOUND, contentType);
-
+	private void replyResource(int fileId, String contentType) throws IOException {
 		try (InputStream in = restService.getApplicationContext().getResources().openRawResource(fileId)) {
-			copy(in, this.out);
+			java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+			byte[] tmp = new byte[8192];
+			int n;
+			while ((n = in.read(tmp)) != -1) buf.write(tmp, 0, n);
+			byte[] body = buf.toByteArray();
+			Map<String, String> fields = new HashMap<>();
+			fields.put("Content-Length", String.valueOf(body.length));
+			sendReplyHeader(ReplyCode.FOUND, contentType, fields);
+			out.write(body);
 		}
 	}
 
 	/**
-	 * Process Image Request
-	 *
-	 * @param req Requested URL
-	 * @return true on success, false if not a valid command
+	 * Decode + canonicalize a request path under rootDir. Returns null if outside.
 	 */
-	private boolean processImageRequest(String req) throws IOException {
+	private File resolveSafe(File rootDir, String req) throws IOException {
+		String decoded;
+		try {
+			decoded = URLDecoder.decode(req, "UTF-8");
+		} catch (IllegalArgumentException e) {
+			return null;
+		}
+		File target = new File(rootDir, decoded);
+		String rootCanon = rootDir.getCanonicalPath();
+		String targetCanon = target.getCanonicalPath();
+		if (!targetCanon.equals(rootCanon) && !targetCanon.startsWith(rootCanon + File.separator)) {
+			return null;
+		}
+		return target;
+	}
+
+	private boolean processImageRequest(String req, Map<String, String> header) throws IOException {
 		Log.d(TAG, "Request image: " + req);
 
-		// No file access to parent directory
-		if (req.contains("..")) {
-			sendReplyHeader(ReplyCode.FORBIDDEN, "text/plain");
-
-			sendLine("Forbidden");
-			sendLine("");
-			sendFooter();
-			return true;
-		}
-
-		Context ctx = restService.getApplicationContext();
 		File rootDir = new File(Environment.getExternalStoragePublicDirectory(DIRECTORY_PICTURES).getPath());
-
 		if (!rootDir.isDirectory()) {
 			return false;
 		}
 
 		// List folder
 		if (req.endsWith("/list")) {
+			String sub = req.substring(0, req.length() - 5);
+			File safe = resolveSafe(rootDir, sub);
+			if (safe == null) {
+				sendText(ReplyCode.FORBIDDEN, "Forbidden");
+				return true;
+			}
 			ListFolderPlain list = new ListFolderPlain(this, rootDir);
-			return list.output(req.substring(0, req.length() - 5));
+			return list.output(sub);
 		}
 
-		// HTML Interface
+		// HTML interface
 		if (req.endsWith("/listhtml")) {
+			String sub = req.substring(0, req.length() - 9);
+			File safe = resolveSafe(rootDir, sub);
+			if (safe == null) {
+				sendText(ReplyCode.FORBIDDEN, "Forbidden");
+				return true;
+			}
 			ListFolderHtml list = new ListFolderHtml(this, rootDir);
-			return list.output(req.substring(0, req.length() - 9));
+			return list.output(sub);
 		}
 
-		// Download a file
-		File requestedFile = new File(rootDir, req);
-		if (requestedFile.isFile()) {
-			sendFileFromFilesystem(requestedFile);
+		// Download
+		File requested = resolveSafe(rootDir, req);
+		if (requested == null) {
+			sendText(ReplyCode.FORBIDDEN, "Forbidden");
+			return true;
+		}
+		if (requested.isFile()) {
+			sendFileFromFilesystem(requested, header);
 			return true;
 		}
 
 		return false;
 	}
 
-	/**
-	 * Send a file from Filesystem
-	 *
-	 * @param file File
-	 */
-	private void sendFileFromFilesystem(File file) throws IOException {
-		Map<String, String> additionalFields = new HashMap<>();
-		additionalFields.put("Content-length", String.valueOf(file.length()));
-		String mime = "application/octet-stream";
-
-		if (file.getName().endsWith(".jpg")) {
-			mime = "image/jpeg";
-		} else if (file.getName().endsWith(".mp4")) {
-			mime = "video/mp4";
-		}
-
-		sendReplyHeader(ReplyCode.FOUND, mime, additionalFields);
-		try (InputStream in = new FileInputStream(file)) {
-			copy(in, this.out);
-		}
+	private static String mimeFor(String name) {
+		String n = name.toLowerCase(Locale.ROOT);
+		if (n.endsWith(".jpg") || n.endsWith(".jpeg")) return "image/jpeg";
+		if (n.endsWith(".png")) return "image/png";
+		if (n.endsWith(".mp4")) return "video/mp4";
+		return "application/octet-stream";
 	}
 
 	/**
-	 * Copy inputstream to outputstream
-	 *
-	 * @param source Source
-	 * @param target Target
-	 * @throws IOException
+	 * Send file with optional Range support (HTTP 206).
 	 */
-	private void copy(InputStream source, OutputStream target) throws IOException {
-		byte[] buf = new byte[8192];
-		int length;
-		while ((length = source.read(buf)) != -1) {
-			target.write(buf, 0, length);
+	private void sendFileFromFilesystem(File file, Map<String, String> header) throws IOException {
+		long total = file.length();
+		String mime = mimeFor(file.getName());
+
+		long start = 0;
+		long end = total - 1;
+		boolean partial = false;
+
+		String rangeHeader = header == null ? null : header.get("Range");
+		if (rangeHeader != null && rangeHeader.startsWith("bytes=")) {
+			String spec = rangeHeader.substring(6);
+			int dash = spec.indexOf('-');
+			if (dash >= 0) {
+				try {
+					String s = spec.substring(0, dash).trim();
+					String e = spec.substring(dash + 1).trim();
+					if (!s.isEmpty()) start = Long.parseLong(s);
+					if (!e.isEmpty()) end = Long.parseLong(e);
+					partial = true;
+				} catch (NumberFormatException nfe) {
+					partial = false;
+				}
+			}
+		}
+
+		if (start < 0) start = 0;
+		if (end >= total) end = total - 1;
+		if (start > end) {
+			partial = false;
+			start = 0;
+			end = total - 1;
+		}
+
+		long length = end - start + 1;
+
+		Map<String, String> fields = new HashMap<>();
+		fields.put("Content-Length", String.valueOf(length));
+		fields.put("Accept-Ranges", "bytes");
+		if (partial) {
+			fields.put("Content-Range", "bytes " + start + "-" + end + "/" + total);
+		}
+
+		sendReplyHeader(partial ? ReplyCode.PARTIAL_CONTENT : ReplyCode.FOUND, mime, fields);
+
+		try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
+			raf.seek(start);
+			byte[] buf = new byte[8192];
+			long remaining = length;
+			while (remaining > 0) {
+				int read = raf.read(buf, 0, (int) Math.min(buf.length, remaining));
+				if (read == -1) break;
+				out.write(buf, 0, read);
+				remaining -= read;
+			}
 		}
 	}
 
-	/**
-	 * Process Control Request
-	 *
-	 * @param command Command
-	 * @return true on success, false if not a valid command
-	 */
 	private boolean processControlRequest(String command) throws IOException {
 		String result = null;
 		if ("status".equals(command)) {
@@ -385,21 +416,15 @@ public class HttpThread extends Thread implements HttpOutput, Closeable {
 			result = "ok";
 		} else if ("param".equals(command)) {
 			StringBuilder b = new StringBuilder();
-
 			SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(restService.getApplicationContext());
 			for (Map.Entry<String, ?> e : prefs.getAll().entrySet()) {
-				b.append(e.getKey());
-				b.append('=');
-				b.append(e.getValue());
-				b.append("\r\n");
+				b.append(e.getKey()).append('=').append(e.getValue()).append("\r\n");
 			}
-
 			result = b.toString();
 		}
 
 		if (result != null) {
-			sendReplyHeader(ReplyCode.FOUND, "text/plain");
-			sendLine(result);
+			sendText(ReplyCode.FOUND, result);
 			return true;
 		}
 
@@ -407,30 +432,87 @@ public class HttpThread extends Thread implements HttpOutput, Closeable {
 	}
 
 	/**
-	 * Send HTTP Text Footer
+	 * DELETE: file or recursive folder. Strict canonical containment.
 	 */
-	private void sendFooter() throws IOException {
-		sendLine("-------------------------------");
-		sendLine("TimeLapseCam");
+	private boolean processDeleteRequest(String url) throws IOException {
+		if (!url.startsWith("/1/img/")) {
+			return false;
+		}
+
+		String req = url.substring(6);
+		// Strip trailing slash
+		while (req.endsWith("/")) {
+			req = req.substring(0, req.length() - 1);
+		}
+
+		File rootDir = new File(Environment.getExternalStoragePublicDirectory(DIRECTORY_PICTURES).getPath());
+		File target = resolveSafe(rootDir, req);
+
+		if (target == null) {
+			sendText(ReplyCode.FORBIDDEN, "Forbidden");
+			return true;
+		}
+
+		// Refuse to delete the root itself
+		if (target.getCanonicalPath().equals(rootDir.getCanonicalPath())) {
+			sendText(ReplyCode.FORBIDDEN, "Cannot delete root");
+			return true;
+		}
+
+		if (!target.exists()) {
+			sendText(ReplyCode.NOT_FOUND, "Not found");
+			return true;
+		}
+
+		boolean ok;
+		if (target.isFile()) {
+			ok = target.delete();
+		} else {
+			ok = deleteRecursive(target);
+		}
+
+		if (ok) {
+			sendText(ReplyCode.FOUND, "deleted");
+		} else {
+			sendText(ReplyCode.SERVER_ERROR, "delete failed");
+		}
+		return true;
+	}
+
+	private static boolean deleteRecursive(File f) {
+		if (f.isDirectory()) {
+			File[] children = f.listFiles();
+			if (children != null) {
+				for (File c : children) {
+					if (!deleteRecursive(c)) return false;
+				}
+			}
+		}
+		return f.delete();
 	}
 
 	/**
-	 * Send HTTP Header
-	 *
-	 * @param code             Code
-	 * @param contentType      Content Type
-	 * @param additionalFields Additional header fields
-	 * @throws IOException
+	 * Send a text reply with Content-Length + Connection: close.
 	 */
+	private void sendText(ReplyCode code, String body) throws IOException {
+		String b = body;
+		if (!b.endsWith("\r\n")) b += "\r\n";
+		byte[] bytes = b.getBytes(StandardCharsets.UTF_8);
+		Map<String, String> fields = new HashMap<>();
+		fields.put("Content-Length", String.valueOf(bytes.length));
+		sendReplyHeader(code, "text/plain", fields);
+		out.write(bytes);
+	}
+
 	public void sendReplyHeader(ReplyCode code, String contentType, Map<String, String> additionalFields) throws IOException {
 		sendLine("HTTP/1.1 " + code.code + " " + code.text);
 		sendLine("Date: " + HTTP_DATE_FORMAT.format(System.currentTimeMillis()));
 		sendLine("Server: TimeLapseCam/" + BuildConfig.VERSION_NAME + " (Android)");
 		sendLine("Content-Type: " + contentType);
+		sendLine("Connection: close");
 		for (Map.Entry<String, String> e : additionalFields.entrySet()) {
 			sendLine(e.getKey() + ": " + e.getValue());
 		}
-
 		// Empty line / end of header
 		sendLine("");
 	}
@@ -451,7 +533,6 @@ public class HttpThread extends Thread implements HttpOutput, Closeable {
 		if (socket == null) {
 			return;
 		}
-
 		try {
 			socket.close();
 		} catch (Exception e) {

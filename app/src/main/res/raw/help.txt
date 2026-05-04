@@ -1,18 +1,20 @@
 HELP
 
-GET /: Show this Help
+GET /: Web UI
 
 REST API v1:
 GET /1/ctrl/status: Get current state: [stopped/running]
 GET /1/ctrl/start: Start recording
 GET /1/ctrl/stop: Stop recording
-GET /1/ctrl/param: Get parameter
+GET /1/ctrl/param: Get all preferences (key=value)
 GET /1/device/battery: Get battery percentage
-GET /1/current/img: Current / last recorded image
-GET /1/current/imgcount: Image count
-GET /1/current/lastimg: Last image: Name, Timestamp and URL
+GET /1/dashboard: Combined status (state, battery, imgcount, lastimg_*, interval_ms, mode)
+GET /1/current/img: Current / last recorded file (image or video)
+GET /1/current/imgcount: Recorded file count this session
+GET /1/current/lastimg: Last file: Name, Timestamp, relative path
 GET /1/img/list: List image folders
-GET /1/img/listhtml: user clickable HTML page
-GET /1/img/<folder>/list: List folder / images
-GET /1/img/<folder>/<folder>/list: List folder / images
-GET /1/img/<folder>/.../<image>: Download image
+GET /1/img/listhtml: User clickable HTML page
+GET /1/img/<folder>/list: List folder
+GET /1/img/<folder>/.../<image>: Download image / video (supports Range / partial content)
+DELETE /1/img/<folder>/.../<image>: Delete a file
+DELETE /1/img/<folder>/: Delete folder recursively
