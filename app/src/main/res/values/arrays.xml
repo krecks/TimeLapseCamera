@@ -11,4 +11,13 @@
         <item>IMAGE_TIME_LAPSE</item>
     </string-array>
 
+    <string-array name="pref_video_codec_entries">
+        <item>H.264</item>
+        <item>H.265 (HEVC)</item>
+    </string-array>
+    <string-array name="pref_video_codec_values">
+        <item>H264</item>
+        <item>HEVC</item>
+    </string-array>
+
 </resources>

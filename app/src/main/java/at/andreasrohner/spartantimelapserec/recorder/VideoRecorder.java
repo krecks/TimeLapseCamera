@@ -160,7 +160,14 @@ public class VideoRecorder extends Recorder implements OnInfoListener,
 				mSettings.getRecProfile());
 		p.videoFrameWidth = mSettings.getFrameWidth();
 		p.videoFrameHeight = mSettings.getFrameHeight();
-		mMediaRecorder.setProfile(p);
+		mMediaRecorder.setOutputFormat(p.fileFormat);
+		mMediaRecorder.setVideoFrameRate(p.videoFrameRate);
+		mMediaRecorder.setVideoSize(p.videoFrameWidth, p.videoFrameHeight);
+		mMediaRecorder.setVideoEncodingBitRate(p.videoBitRate);
+		mMediaRecorder.setVideoEncoder(mSettings.getVideoCodec());
+		mMediaRecorder.setAudioEncodingBitRate(p.audioBitRate);
+		mMediaRecorder.setAudioSamplingRate(p.audioSampleRate);
+		mMediaRecorder.setAudioEncoder(p.audioCodec);
 
 		if (mRate != -1)
 			mMediaRecorder.setVideoFrameRate(mRate);

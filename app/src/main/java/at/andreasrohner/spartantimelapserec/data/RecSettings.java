@@ -24,6 +24,7 @@ import static android.os.Environment.DIRECTORY_PICTURES;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.media.CamcorderProfile;
+import android.media.MediaRecorder;
 import android.os.Environment;
 import at.andreasrohner.spartantimelapserec.preference.DateTimePreference;
 
@@ -51,6 +52,7 @@ public class RecSettings {
 	private int cameraTriggerDelay;
 	private boolean cameraFlash;
 	private int videoEncodingBitRate;
+	private int videoCodec;
 
 	public static int getInteger(SharedPreferences prefs, String key, int def) {
 		try {
@@ -156,6 +158,13 @@ public class RecSettings {
 		cameraInitDelay = prefs.getInt("pref_camera_init_delay", 500);
 		cameraTriggerDelay = prefs.getInt("pref_camera_trigger_delay", 1000);
 		cameraFlash = prefs.getBoolean("pref_flash",false);
+
+		String codecStr = prefs.getString("pref_video_codec", "H264");
+		if ("HEVC".equals(codecStr)) {
+			videoCodec = MediaRecorder.VideoEncoder.HEVC;
+		} else {
+			videoCodec = MediaRecorder.VideoEncoder.H264;
+		}
 		// negative value disables the limit
 		if (stopRecAfter >= 47 * 60)
 			stopRecAfter = -1;
@@ -343,4 +352,6 @@ public class RecSettings {
 	public boolean getCameraFlash() {return cameraFlash;}
 
 	public int getVideoEncodingBitRate() {return  videoEncodingBitRate;}
+
+	public int getVideoCodec() { return videoCodec; }
 }

@@ -49,7 +49,11 @@ public class VideoTimeLapseRecorder extends VideoRecorder {
 				mSettings.getRecProfile());
 		p.videoFrameWidth = mSettings.getFrameWidth();
 		p.videoFrameHeight = mSettings.getFrameHeight();
-		mMediaRecorder.setProfile(p);
+		mMediaRecorder.setOutputFormat(p.fileFormat);
+		mMediaRecorder.setVideoFrameRate(p.videoFrameRate);
+		mMediaRecorder.setVideoSize(p.videoFrameWidth, p.videoFrameHeight);
+		mMediaRecorder.setVideoEncodingBitRate(p.videoBitRate);
+		mMediaRecorder.setVideoEncoder(mSettings.getVideoCodec());
 
 		mMediaRecorder.setCaptureRate(1000 / ((double) mSettings.getCaptureRate()));
 
