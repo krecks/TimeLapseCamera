@@ -12,7 +12,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ServiceInfo;
-import android.net.NetworkInfo;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.IBinder;
@@ -215,8 +216,10 @@ public class RestService extends Service implements Runnable {
 		Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID).setSilent(true).setOnlyAlertOnce(true).setPriority(NotificationCompat.PRIORITY_DEFAULT) // For N and below
 				.setContentIntent(pi).setSmallIcon(R.drawable.ic_camera).setAutoCancel(false).setOngoing(true).setVisibility(NotificationCompat.VISIBILITY_PUBLIC).setContentText(getString(R.string.notification_restapi)).setContentTitle(getString(R.string.app_name)).build();
 
-		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-			startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA);
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+			startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+		} else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+			startForeground(NOTIF_ID, notification, 0);
 		} else {
 			startForeground(NOTIF_ID, notification);
 		}
@@ -506,34 +509,43 @@ public class RestService extends Service implements Runnable {
 	 * @return true if connected to a local network
 	 */
 	public static boolean isConnectedToLocalNetwork(Context context) {
-		boolean connected = false;
 		ConnectivityManager cm = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
-		NetworkInfo ni = cm.getActiveNetworkInfo();
-		connected = ni != null && ni.isConnected() && (ni.getType() & (ConnectivityManager.TYPE_WIFI | ConnectivityManager.TYPE_ETHERNET)) != 0;
-		if (!connected) {
-			Log.d(TAG, "isConnectedToLocalNetwork: see if it is an WIFI AP");
-			WifiManager wm = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-			try {
-				Method method = wm.getClass().getDeclaredMethod("isWifiApEnabled");
-				connected = (Boolean) method.invoke(wm);
-			} catch (Exception e) {
-				Log.e(TAG, "Failed to check WiFi connection", e);
-			}
-		}
-		if (!connected) {
-			Log.d(TAG, "isConnectedToLocalNetwork: see if it is an USB AP");
-			try {
-				ArrayList<NetworkInterface> networkInterfaces = Collections.list(NetworkInterface.getNetworkInterfaces());
-				for (NetworkInterface netInterface : networkInterfaces) {
-					if (netInterface.getDisplayName().startsWith("rndis")) {
-						connected = true;
-					}
+
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+			Network network = cm.getActiveNetwork();
+			if (network != null) {
+				NetworkCapabilities caps = cm.getNetworkCapabilities(network);
+				if (caps != null && (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+						|| caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))) {
+					return true;
 				}
-			} catch (Exception e) {
-				Log.e(TAG, "Failed to check Ethernet connection", e);
+			}
+		} else {
+			android.net.NetworkInfo ni = cm.getActiveNetworkInfo();
+			if (ni != null && ni.isConnected() && (ni.getType() & (ConnectivityManager.TYPE_WIFI | ConnectivityManager.TYPE_ETHERNET)) != 0) {
+				return true;
 			}
 		}
-		return connected;
+
+		// Check WiFi AP (hotspot)
+		WifiManager wm = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+		try {
+			Method method = wm.getClass().getDeclaredMethod("isWifiApEnabled");
+			if ((Boolean) method.invoke(wm)) return true;
+		} catch (Exception e) {
+			Log.d(TAG, "isConnectedToLocalNetwork: WiFi AP check failed", e);
+		}
+
+		// Check USB tethering (rndis)
+		try {
+			for (NetworkInterface netInterface : Collections.list(NetworkInterface.getNetworkInterfaces())) {
+				if (netInterface.getDisplayName().startsWith("rndis")) return true;
+			}
+		} catch (Exception e) {
+			Log.d(TAG, "isConnectedToLocalNetwork: USB check failed", e);
+		}
+
+		return false;
 	}
 
 	@Override

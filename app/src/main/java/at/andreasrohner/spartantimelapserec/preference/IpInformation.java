@@ -50,7 +50,7 @@ public class IpInformation extends DialogPreference {
 		if (addr == null) {
 			setSummary(ctx.getString(R.string.error_no_ip_refresh));
 		} else {
-			setSummary("http:/" + addr + ":" + RestService.getPort(ctx));
+			setSummary("http://" + addr.getHostAddress() + ":" + RestService.getPort(ctx));
 		}
 	}
 }

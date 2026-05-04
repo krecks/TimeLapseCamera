@@ -16,6 +16,7 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
@@ -52,7 +53,7 @@
 
         <service
             android:exported="false"
-            android:foregroundServiceType="camera"
+            android:foregroundServiceType="specialUse"
             android:name="at.andreasrohner.spartantimelapserec.rest.RestService" />
 
         <receiver android:name="at.andreasrohner.spartantimelapserec.ScheduleReceiver" />
