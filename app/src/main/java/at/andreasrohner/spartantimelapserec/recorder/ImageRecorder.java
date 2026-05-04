@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import android.content.Context;
 import android.graphics.ImageFormat;
@@ -52,12 +53,12 @@ public class ImageRecorder extends Recorder implements Runnable,
 	/**
 	 * Current / last recorded image
 	 */
-	private static File currentRecordedImage;
+	private static volatile File currentRecordedImage;
 
 	/**
 	 * Count of recorded images within the whole app session
 	 */
-	private static int recordedImagesCount = 0;
+	private static final AtomicInteger recordedImagesCount = new AtomicInteger(0);
 
 	public ImageRecorder(RecSettings settings,
 			Context context, Handler handler) {
@@ -75,17 +76,25 @@ public class ImageRecorder extends Recorder implements Runnable,
 	}
 
 	/**
-	 * @return Current / last recorded image
+	 * @return Current / last recorded file (image or video)
 	 */
 	public static File getCurrentRecordedImage() {
 		return currentRecordedImage;
 	}
 
 	/**
+	 * Set current recorded file — called by video recorders that don't go through onPictureTaken
+	 */
+	public static void setCurrentRecordedFile(File file) {
+		currentRecordedImage = file;
+		recordedImagesCount.incrementAndGet();
+	}
+
+	/**
 	 * @return Count of recorded images within the whole app session
 	 */
 	public static int getRecordedImagesCount() {
-		return recordedImagesCount;
+		return recordedImagesCount.get();
 	}
 
 	@Override
@@ -120,7 +129,7 @@ public class ImageRecorder extends Recorder implements Runnable,
 			out.write(data);
 			out.close();
 			mWaitCamReady = false;
-			recordedImagesCount++;
+			recordedImagesCount.incrementAndGet();
 			scheduleNextPicture();
 		} catch (Exception e) {
 			handleError(getClass().getSimpleName(), e.getMessage());

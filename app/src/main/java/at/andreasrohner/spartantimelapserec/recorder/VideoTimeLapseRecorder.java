@@ -18,6 +18,7 @@
 
 package at.andreasrohner.spartantimelapserec.recorder;
 
+import java.io.File;
 import java.io.IOException;
 
 import android.content.Context;
@@ -54,7 +55,9 @@ public class VideoTimeLapseRecorder extends VideoRecorder {
 
 		if (mRate != -1)
 			mMediaRecorder.setVideoFrameRate(mRate);
-		mMediaRecorder.setOutputFile(getOutputFile("mp4").getAbsolutePath());
+		File outputFile = getOutputFile("mp4");
+		ImageRecorder.setCurrentRecordedFile(outputFile);
+		mMediaRecorder.setOutputFile(outputFile.getAbsolutePath());
 		mMediaRecorder.setVideoSize(mSettings.getFrameWidth(),
 				mSettings.getFrameHeight());
 

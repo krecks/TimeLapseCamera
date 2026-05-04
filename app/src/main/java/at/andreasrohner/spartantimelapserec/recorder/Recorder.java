@@ -46,6 +46,7 @@ public abstract class Recorder {
 	protected MuteShutter mMute;
 	private File mOutputDir;
 	private int mFileIndex;
+	private boolean mDirOk = true;
 
 	public static Recorder getInstance(RecSettings settings,
 			 Context context, Handler handler,
@@ -96,7 +97,7 @@ public abstract class Recorder {
 
 		if (!mOutputDir.exists() && !mOutputDir.mkdirs()) {
 			Log.e("TimeLapseCamera", "Failed to make directory: " + mOutputDir.toString());
-			return;
+			mDirOk = false;
 		}
 
 		mInitDelay = settings.getInitDelay();
@@ -182,6 +183,11 @@ public abstract class Recorder {
 
 		if (mHandler == null  || mContext == null)
 			return;
+
+		if (!mDirOk) {
+			handleError(getClass().getSimpleName(), "Failed to create output directory: " + mOutputDir);
+			return;
+		}
 
 		enableOrientationSensor();
 
