@@ -198,6 +198,7 @@ public class HttpThread extends Thread implements HttpOutput, Closeable {
 	private boolean processDashboard() throws IOException {
 		StringBuilder b = new StringBuilder();
 		b.append("state=").append(ForegroundService.mIsRunning ? "running" : "stopped").append("\r\n");
+		b.append("started_ts=").append(ForegroundService.mStartedAt).append("\r\n");
 		b.append("battery=").append(getBatteryLevel()).append("\r\n");
 		b.append("imgcount=").append(ImageRecorder.getRecordedImagesCount()).append("\r\n");
 

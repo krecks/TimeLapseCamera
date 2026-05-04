@@ -272,6 +272,12 @@ a { color: inherit; text-decoration: none; }
   color: var(--dim);
   letter-spacing: 0.05em;
 }
+.rec-overlay .rec-count {
+  font-size: 0.72rem;
+  color: var(--dim);
+  letter-spacing: 0.08em;
+  margin-top: 4px;
+}
 .preview-meta {
   margin-top: 10px;
   display: flex; align-items: center; justify-content: space-between;
@@ -550,6 +556,7 @@ var g_recordingStartTs = 0;
 var g_recTimerId = null;
 var g_recName = '';
 var g_recAnchor = 0;
+var g_serverStartedAt = 0;
 
 // ---- Helpers ----
 function setLoading(on) {
@@ -706,17 +713,19 @@ function applyLastImg(name, ts, rel) {
 
   if (recording) {
     var nameChanged = g_recName !== name;
-    if (nameChanged) {
+    var anchor = g_serverStartedAt || g_stateChangedAt || Date.now();
+    var anchorChanged = g_recAnchor !== anchor;
+    if (nameChanged || anchorChanged) {
       g_recName = name;
-      g_recAnchor = g_stateChangedAt || Date.now();
+      g_recAnchor = anchor;
       frame.innerHTML = '<div class="rec-overlay">' +
         '<div class="badge"><span class="dot live"></span><span>REC</span></div>' +
         '<div class="rec-time" id="recTime">00:00</div>' +
         '<div class="rec-name">' + esc(name) + '</div>' +
+        '<div class="rec-count" id="recCount"></div>' +
       '</div>';
       startRecTimer(g_recAnchor);
     }
-    // else: keep timer running, don't rebuild
   } else if (isImg) {
     var src = changed ? url + '?t=' + ts : url;
     if (!changed && frame.querySelector('img')) {
@@ -796,9 +805,13 @@ function applyParams(config) {
 function btRefresh(forceParams) {
   loadRest('/1/dashboard', function(d) {
     var cfg = parseKv(d);
+    g_serverStartedAt = parseInt(cfg.started_ts) || 0;
     applyState(cfg.state || 'unknown');
     applyBattery(parseFloat(cfg.battery) || 0);
-    document.getElementById('rowCount').textContent = cfg.imgcount || '0';
+    var count = cfg.imgcount || '0';
+    document.getElementById('rowCount').textContent = count;
+    var rc = document.getElementById('recCount');
+    if (rc) rc.textContent = count + ' file' + (count === '1' ? '' : 's') + ' captured';
 
     g_intervalMs = parseInt(cfg.interval_ms) || g_intervalMs;
     g_mode = cfg.mode || g_mode;

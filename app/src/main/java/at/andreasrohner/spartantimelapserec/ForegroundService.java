@@ -38,6 +38,7 @@ public class ForegroundService extends Service implements Handler.Callback {
 
     public static final String ACTION_STOP_SERVICE = "TimeLapse.action.STOP_SERVICE";
     public static boolean mIsRunning = false;
+    public static volatile long mStartedAt = 0;
     private RecSettings settings;
     private Recorder recorder;
     private HandlerThread handlerThread;
@@ -63,6 +64,7 @@ public class ForegroundService extends Service implements Handler.Callback {
         if (intent == null || !ACTION_STOP_SERVICE.equals(intent.getAction())) {
             initNotif();
             mIsRunning = true;
+            mStartedAt = System.currentTimeMillis();
 
             settings = new RecSettings();
             settings.load(getApplicationContext(), PreferenceManager.getDefaultSharedPreferences(getApplicationContext()));
@@ -140,6 +142,7 @@ public class ForegroundService extends Service implements Handler.Callback {
                     Uri.fromFile(projectDir)));
 
         mIsRunning = false;
+        mStartedAt = 0;
         if (listener!=null) listener.onServiceStatusChange(false);
         stopForeground(true);
         stopSelf();
