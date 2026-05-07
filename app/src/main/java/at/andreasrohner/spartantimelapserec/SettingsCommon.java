@@ -60,7 +60,7 @@ public class SettingsCommon implements OnSharedPreferenceChangeListener, SeekBar
 	private ListPreference prefCamera;
 
 	private ListPreference prefRecMode;
-
+	private ListPreference prefVideoCodec;
 	private SeekBarPreference prefInitialDelay;
 
 	private IntervalPickerPreference prefCaptureRate;
@@ -310,6 +310,42 @@ public class SettingsCommon implements OnSharedPreferenceChangeListener, SeekBar
 		return res;
 	}
 
+	private String getCodecSpecificSummary(SharedPreferences prefs) {
+		String codec = prefs.getString("pref_video_codec", "H264");
+		String size = prefs.getString("pref_frame_size", "1920x1080");
+		String fpsStr = prefs.getString("pref_frame_rate", "30");
+		int fps = 30;
+		try {
+			fps = Integer.parseInt(fpsStr);
+		} catch (NumberFormatException e) {}
+
+		int width = 1920;
+		int height = 1080;
+		try {
+			String[] parts = size.split("x");
+			if (parts.length == 2) {
+				width = Integer.parseInt(parts[0]);
+				height = Integer.parseInt(parts[1]);
+			}
+		} catch (NumberFormatException e) {}
+
+		double bpp; // bits per pixel per frame
+		String codecName;
+
+		if ("HEVC".equals(codec)) {
+			codecName = "H.265";
+			// Base: 2 Mbps for 1920x1080 @ 30fps
+			bpp = 2000000.0 / (1920.0 * 1080.0 * 30.0);
+		} else {
+			codecName = "H.264";
+			// Base: 4 Mbps for 1920x1080 @ 30fps
+			bpp = 4000000.0 / (1920.0 * 1080.0 * 30.0);
+		}
+
+		double recommendedBitrateMbps = (width * height * fps * bpp) / 1000000.0;
+		return context.getString(R.string.pref_video_enc_summ_rec, codecName, size, recommendedBitrateMbps);
+	}
+
 	@Override
 	public String onFormatOutputValue(int value, String suffix) {
 		if ("ms".equals(suffix))
@@ -354,8 +390,14 @@ public class SettingsCommon implements OnSharedPreferenceChangeListener, SeekBar
 			prefJpegQuality.setSummary(prefJpegQuality.getmValue() + " %");
 		} else if (key.equals("pref_frame_size")) {
 			prefFrameSize.setSummary(prefFrameSize.getEntry());
+			if (RecSettings.getInteger(prefs, "pref_video_encoding_br", 0) == 0) {
+				prefVideoEncodingBitRate.setSummary(getCodecSpecificSummary(prefs));
+			}
 		} else if (key.equals("pref_frame_rate")) {
 			prefFrameRate.setSummary(prefFrameRate.getEntry());
+			if (RecSettings.getInteger(prefs, "pref_video_encoding_br", 0) == 0) {
+				prefVideoEncodingBitRate.setSummary(getCodecSpecificSummary(prefs));
+			}
 		} else if (key.equals("pref_schedule_recording")) {
 			prefScheduleRec.setSummary(prefScheduleRec.formatDateTime());
 			RecSettings settings = new RecSettings();
@@ -382,6 +424,10 @@ public class SettingsCommon implements OnSharedPreferenceChangeListener, SeekBar
 			prefCameraInitDelay.setSummary(formatTime(prefCameraInitDelay.getmValue()));
 		} else if (key.equals("pref_camera_trigger_delay")) {
 			prefCameraTriggerDelay.setSummary(formatTime(prefCameraTriggerDelay.getmValue()));
+		} else if (key.equals("pref_video_codec")) {
+			if (RecSettings.getInteger(prefs, "pref_video_encoding_br", 0) == 0) {
+				prefVideoEncodingBitRate.setSummary(getCodecSpecificSummary(prefs));
+			}
 		} else if (key.equals("pref_video_encoding_br")) {
 			if (RecSettings.getInteger(prefs, "pref_video_encoding_br", 0) == 0) {  //reset to undefined, so hint is shown again
 				SharedPreferences.Editor editor = prefs.edit();
@@ -389,7 +435,7 @@ public class SettingsCommon implements OnSharedPreferenceChangeListener, SeekBar
 				editor.commit();
 				prefVideoEncodingBitRate.setText("");  //show hint again
 			}
-			prefVideoEncodingBitRate.setSummary(RecSettings.getInteger(prefs, "pref_video_encoding_br", 0) == 0 ? context.getString(R.string.encode_best) : context.getString(R.string.format_bps, prefs.getString("pref_video_encoding_br", "0")));
+			prefVideoEncodingBitRate.setSummary(RecSettings.getInteger(prefs, "pref_video_encoding_br", 0) == 0 ? getCodecSpecificSummary(prefs) : context.getString(R.string.format_bps, prefs.getString("pref_video_encoding_br", "0")));
 		} else if (key.equals("pref_restapi_enabled")) {
 			startStopRestApiServer();
 		} else if (key.equals("pref_restapi_port")) {
@@ -451,6 +497,7 @@ public class SettingsCommon implements OnSharedPreferenceChangeListener, SeekBar
 		prefCameraInitDelay = (SeekBarPreference) screen.findPreference("pref_camera_init_delay");
 		prefCameraTriggerDelay = (SeekBarPreference) screen.findPreference("pref_camera_trigger_delay");
 		prefFlash = (SwitchPreference) screen.findPreference("pref_flash");
+		prefVideoCodec = (ListPreference) screen.findPreference("pref_video_codec");
 		prefIpInformation = (IpInformation) screen.findPreference("pref_restapi_information");
 
 		setZoomRange(prefs);
@@ -480,7 +527,7 @@ public class SettingsCommon implements OnSharedPreferenceChangeListener, SeekBar
 		value = prefs.getInt("pref_stop_recording_after", -1);
 		if (value != -1)
 			prefStopRecAfter.setSummary(onFormatOutputValue(value, "min"));
-		prefVideoEncodingBitRate.setSummary(RecSettings.getInteger(prefs, "pref_video_encoding_br", 0) == 0 ? context.getString(R.string.encode_best) : context.getString(R.string.format_bps, prefs.getString("pref_video_encoding_br", "0")));
+		prefVideoEncodingBitRate.setSummary(RecSettings.getInteger(prefs, "pref_video_encoding_br", 0) == 0 ? getCodecSpecificSummary(prefs) : context.getString(R.string.format_bps, prefs.getString("pref_video_encoding_br", "0")));
 		prefExposureComp.setSummary(Integer.toString(prefExposureComp.getmValue()));
 		prefZoom.setSummary(Integer.toString(prefZoom.getmValue()));
 		prefCameraInitDelay.setSummary(formatTime(prefCameraInitDelay.getmValue()));

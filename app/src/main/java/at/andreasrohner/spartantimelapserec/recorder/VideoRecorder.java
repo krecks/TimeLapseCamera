@@ -161,18 +161,21 @@ public class VideoRecorder extends Recorder implements OnInfoListener,
 		p.videoFrameWidth = mSettings.getFrameWidth();
 		p.videoFrameHeight = mSettings.getFrameHeight();
 		mMediaRecorder.setOutputFormat(p.fileFormat);
-		mMediaRecorder.setVideoFrameRate(p.videoFrameRate);
-		mMediaRecorder.setVideoSize(p.videoFrameWidth, p.videoFrameHeight);
-		mMediaRecorder.setVideoEncodingBitRate(p.videoBitRate);
 		mMediaRecorder.setVideoEncoder(mSettings.getVideoCodec());
-		mMediaRecorder.setAudioEncodingBitRate(p.audioBitRate);
-		mMediaRecorder.setAudioSamplingRate(p.audioSampleRate);
 		mMediaRecorder.setAudioEncoder(p.audioCodec);
+		mMediaRecorder.setVideoSize(p.videoFrameWidth, p.videoFrameHeight);
+		mMediaRecorder.setVideoFrameRate(p.videoFrameRate);
+		int bitrate = p.videoBitRate;
+		if (mSettings.getVideoCodec() == MediaRecorder.VideoEncoder.HEVC && mSettings.getVideoEncodingBitRate() == 0) {
+			bitrate = (int)(bitrate * 0.6);
+		}
+		mMediaRecorder.setVideoEncodingBitRate(bitrate);
+		mMediaRecorder.setAudioSamplingRate(p.audioSampleRate);
+		mMediaRecorder.setAudioEncodingBitRate(p.audioBitRate);
 
 		if (mRate != -1)
 			mMediaRecorder.setVideoFrameRate(mRate);
 		mMediaRecorder.setOutputFile(getOutputFile("mp4").getAbsolutePath());
-		mMediaRecorder.setVideoSize(mSettings.getFrameWidth(), mSettings.getFrameHeight());
 
 		if (mSettings.getStopRecAfter() > 0) {
 			mMediaRecorder.setMaxDuration(mSettings.getStopRecAfter());

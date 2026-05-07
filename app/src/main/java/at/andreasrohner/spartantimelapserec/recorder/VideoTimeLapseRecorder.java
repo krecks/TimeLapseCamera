@@ -50,10 +50,14 @@ public class VideoTimeLapseRecorder extends VideoRecorder {
 		p.videoFrameWidth = mSettings.getFrameWidth();
 		p.videoFrameHeight = mSettings.getFrameHeight();
 		mMediaRecorder.setOutputFormat(p.fileFormat);
-		mMediaRecorder.setVideoFrameRate(p.videoFrameRate);
-		mMediaRecorder.setVideoSize(p.videoFrameWidth, p.videoFrameHeight);
-		mMediaRecorder.setVideoEncodingBitRate(p.videoBitRate);
 		mMediaRecorder.setVideoEncoder(mSettings.getVideoCodec());
+		mMediaRecorder.setVideoSize(p.videoFrameWidth, p.videoFrameHeight);
+		mMediaRecorder.setVideoFrameRate(p.videoFrameRate);
+		int bitrate = p.videoBitRate;
+		if (mSettings.getVideoCodec() == MediaRecorder.VideoEncoder.HEVC && mSettings.getVideoEncodingBitRate() == 0) {
+			bitrate = (int)(bitrate * 0.6);
+		}
+		mMediaRecorder.setVideoEncodingBitRate(bitrate);
 
 		mMediaRecorder.setCaptureRate(1000 / ((double) mSettings.getCaptureRate()));
 
@@ -62,8 +66,6 @@ public class VideoTimeLapseRecorder extends VideoRecorder {
 		File outputFile = getOutputFile("mp4");
 		ImageRecorder.setCurrentRecordedFile(outputFile);
 		mMediaRecorder.setOutputFile(outputFile.getAbsolutePath());
-		mMediaRecorder.setVideoSize(mSettings.getFrameWidth(),
-				mSettings.getFrameHeight());
 
 		if (mSettings.getStopRecAfter() > 0) {
 			if (mRate != -1) {
